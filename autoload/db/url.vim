@@ -152,7 +152,7 @@ function! db#url#as_args(url, host, port, socket, user, password, db) abort
 endfunction
 
 function! db#url#path_encode(str, ...) abort
-  return substitute(a:str, '[?@=&<>%#[:space:]'.(a:0 ? a:1 : '').']', '\=printf("%%%02X", char2nr(submatch(0)))', 'g')
+  return substitute(a:str, '[?@$=&<>%#[:space:]'.(a:0 ? a:1 : '').']', '\=printf("%%%02X", char2nr(submatch(0)))', 'g')
 endfunction
 
 function! db#url#encode(str) abort
