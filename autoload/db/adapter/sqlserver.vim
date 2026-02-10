@@ -1,37 +1,32 @@
+" autoload/db/adapter/sqlserver.vim
+
 if exists('g:autoloaded_db_adapter_sqlserver')
   finish
 endif
 let g:autoloaded_db_adapter_sqlserver = 1
 
+" We bypass canonicalize to avoid E117 and let usql handle the URL string
 function! db#adapter#sqlserver#canonicalize(url) abort
-  return db#url#canonicalize(a:url)
-endfunction
-
-function! s:format_url(url) abort
-  let l:url = copy(a:url)
-  " usql expects the database as a query parameter or part of the path
-  " If it's not in the path, usql sometimes needs ?database=
-  return l:url
+  return a:url
 endfunction
 
 function! db#adapter#sqlserver#interactive(url, ...) abort
-  " usql [DSN]
-  return ['usql', a:url]
+  " usql expects the connection string directly
+  return ['/opt/bin/usql', a:url]
 endfunction
 
 function! db#adapter#sqlserver#filter(url) abort
   " --quiet: hide welcome message
-  " --force-color=false: ensure no ANSI codes in vim buffer
-  return ['usql', a:url, '--quiet', '--force-color=false']
+  " --force-color=false: ensure no ANSI codes in the vim buffer
+  return ['/opt/bin/usql', a:url, '--quiet', '--force-color=false']
 endfunction
 
 function! db#adapter#sqlserver#complete_database(url) abort
-  " This is optional but allows completion of DB names if usql can query them
   return []
 endfunction
 
 function! db#adapter#sqlserver#complete_table(url) abort
-  " Query to fetch tables for completion via usql
+  " Simplified query for table completion
   let l:cmd = db#adapter#sqlserver#filter(a:url) + ['-c', "SELECT name FROM sys.tables"]
   return split(system(join(map(l:cmd, 'shellescape(v:val)'), ' ')), "\n")
 endfunction
