@@ -1,83 +1,37 @@
+if exists('g:autoloaded_db_adapter_sqlserver')
+  finish
+endif
+let g:autoloaded_db_adapter_sqlserver = 1
+
 function! db#adapter#sqlserver#canonicalize(url) abort
-  let url = a:url
-  if url =~# ';.*=' && url !~# '?'
-    let url = tr(substitute(substitute(url, ';', '?', ''), ';$', '', ''), ';', '&')
-  endif
-  let parsed = db#url#parse(url)
-  for [param, value] in items(parsed.params)
-    let canonical = param !~# '\l' ? param : tolower(param[0]) . param[1 : -1]
-    if canonical !=# param
-      call remove(parsed.params, param)
-      if has_key(parsed.params, canonical)
-        continue
-      else
-        let parsed.params[canonical] = value
-      endif
-    endif
-    if value is# 1
-      let parsed.params[canonical] = 'true'
-    endif
-  endfor
-  return db#url#absorb_params(parsed, {
-        \ 'user': 'user',
-        \ 'userName': 'user',
-        \ 'password': 'password',
-        \ 'server': 'host',
-        \ 'serverName': 'host',
-        \ 'port': 'port',
-        \ 'portNumber': 'port',
-        \ 'database': 'database',
-        \ 'databaseName': 'database'})
+  return db#url#canonicalize(a:url)
 endfunction
 
-function! s:server(url) abort
-  return get(a:url, 'host', 'localhost') .
-        \ (has_key(a:url, 'port') ? ',' . a:url.port : '')
+function! s:format_url(url) abort
+  let l:url = copy(a:url)
+  " usql expects the database as a query parameter or part of the path
+  " If it's not in the path, usql sometimes needs ?database=
+  return l:url
 endfunction
 
-function! s:boolean_param_flag(url, param, flag) abort
-  let value = get(a:url.params, a:param, get(a:url.params, toupper(a:param[0]) . a:param[1 : -1], '0'))
-  return value =~# '^[1tTyY]' ? [a:flag] : []
+function! db#adapter#sqlserver#interactive(url, ...) abort
+  " usql [DSN]
+  return ['usql', a:url]
 endfunction
 
-function! db#adapter#sqlserver#interactive(url) abort
-  let url = db#url#parse(a:url)
-  let encrypt = get(url.params, 'encrypt', get(url.params, 'Encrypt', ''))
-  let has_authentication = has_key(url.params, 'authentication')
-  return (has_key(url, 'password') ? ['env', 'SQLCMDPASSWORD=' . url.password] : []) +
-        \ ['sqlcmd', '-S', s:server(url)] +
-        \ (empty(encrypt) ? [] : ['-N'] + (encrypt ==# '1' ? [] : [url.params.encrypt])) +
-        \ s:boolean_param_flag(url, 'trustServerCertificate', '-C') +
-        \ (has_key(url, 'user') || has_authentication ? [] : ['-E']) +
-        \ (has_authentication ? ['--authentication-method', url.params.authentication] : []) +
-        \ db#url#as_argv(url, '', '', '', '-U ', '', '-d ')
-endfunction
-
-function! db#adapter#sqlserver#input(url, in) abort
-  return db#adapter#sqlserver#interactive(a:url) + ['-i', a:in]
-endfunction
-
-function! db#adapter#sqlserver#dbext(url) abort
-  let url = db#url#parse(a:url)
-  return {
-        \ 'srvname': s:server(url),
-        \ 'host': '',
-        \ 'port': '',
-        \ 'integratedlogin': !has_key(url, 'user'),
-        \ }
-endfunction
-
-function! s:complete(url, query) abort
-  let cmd = db#adapter#sqlserver#interactive(a:url)
-  let query = 'SET NOCOUNT ON; ' . a:query
-  let out = db#systemlist(cmd + ['-h-1', '-W', '-Q', query])
-  return map(out, 'matchstr(v:val, "\\S\\+")')
+function! db#adapter#sqlserver#filter(url) abort
+  " --quiet: hide welcome message
+  " --force-color=false: ensure no ANSI codes in vim buffer
+  return ['usql', a:url, '--quiet', '--force-color=false']
 endfunction
 
 function! db#adapter#sqlserver#complete_database(url) abort
-  return s:complete(matchstr(a:url, '^[^:]\+://.\{-\}/'), 'SELECT NAME FROM sys.sysdatabases')
+  " This is optional but allows completion of DB names if usql can query them
+  return []
 endfunction
 
-function! db#adapter#sqlserver#tables(url) abort
-  return s:complete(a:url, 'SELECT TABLE_NAME FROM information_schema.tables ORDER BY TABLE_NAME')
+function! db#adapter#sqlserver#complete_table(url) abort
+  " Query to fetch tables for completion via usql
+  let l:cmd = db#adapter#sqlserver#filter(a:url) + ['-c', "SELECT name FROM sys.tables"]
+  return split(system(join(map(l:cmd, 'shellescape(v:val)'), ' ')), "\n")
 endfunction
